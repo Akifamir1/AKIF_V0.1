@@ -1,0 +1,392 @@
+const dns = require('dns');
+try { dns.setServers(['8.8.8.8', '1.1.1.1']); } catch (e) {}
+const mongoose = require('mongoose');
+
+// SCHEMAS
+const Akif_toggleSchema = new mongoose.Schema({
+    jid: { type: String, required: true },
+    command: { type: String, required: true },
+    isEnabled: { type: Boolean, default: true }
+});
+
+const kaif_userSettingsSchema = new mongoose.Schema({
+    jid: { type: String, required: true, unique: true },
+    autoStatusSeen: { type: Boolean, default: false },
+    autoStatusReact: { type: Boolean, default: false },
+    autoStatusMessage: { type: Boolean, default: false },
+    autoTyping: { type: Boolean, default: false },
+    autoRecording: { type: Boolean, default: false },
+    autoViewOnce: { type: Boolean, default: false }
+});
+
+const kaif_autoReplySchema = new mongoose.Schema({
+    trigger: { type: String, required: true },
+    reply: { type: String, required: true }
+});
+
+const kaif_rankSchema = new mongoose.Schema({
+    jid: { type: String, required: true, unique: true },
+    xp: { type: Number, default: 0 },
+    level: { type: Number, default: 0 },
+    role: { type: String, default: 'Novice' }
+});
+
+const Akif_sessionIndexSchema = new mongoose.Schema({
+    sessionId: { type: String, required: true, unique: true },
+    createdAt: { type: Date, default: Date.now }
+});
+
+const kaif_bgmSchema = new mongoose.Schema({
+    trigger: { type: String, required: true },
+    audioUrl: { type: String, required: true },
+    mimetype: { type: String, default: 'audio/mp4' }
+});
+
+const Akif_bgmConfigSchema = new mongoose.Schema({
+    isEnabled: { type: Boolean, default: true }
+});
+
+const Akif_mentionSchema = new mongoose.Schema({
+    type: { type: String, default: 'text' },
+    content: { type: String, required: true },
+    mimetype: { type: String }
+});
+
+const Akif_mentionConfigSchema = new mongoose.Schema({
+    isEnabled: { type: Boolean, default: true }
+});
+
+const Akif_botConfigSchema = new mongoose.Schema({
+    prefix: { type: String, default: '.' },
+    menuImage: { type: String, default: '' },
+    autoRead: { type: Boolean, default: false },
+    autoRejectCall: { type: Boolean, default: false },
+    autoWelcome: { type: Boolean, default: false },
+    autoGoodbye: { type: Boolean, default: false },
+    welcomeMessage: { type: String, default: '' },
+    goodbyeMessage: { type: String, default: '' },
+    ownerName: { type: String, default: 'Kaif' },
+    ownerNumber: { type: String, default: '' },
+    ownerJid: { type: String, default: '' },
+    sudo: { type: [String], default: [] },
+    autoStatusSeen: { type: Boolean, default: true },
+    autoStatusReact: { type: Boolean, default: true },
+    autoStatusSave: { type: Boolean, default: false },
+    antiDelete: { type: Boolean, default: true },
+    autoViewOnce: { type: Boolean, default: true },
+    antiViewOnce: { type: Boolean, default: true },
+    newsletterJid: { type: String, default: '120363419652241844@newsletter' },
+    newsletterName: { type: String, default: 'Akif-V1' },
+    workMode: { type: String, default: 'private' }
+});
+
+const Akif_groupSettingsSchema = new mongoose.Schema({
+    jid: { type: String, required: true, unique: true },
+    antilink: { type: Boolean, default: false },
+    antilinkMode: { type: String, default: 'delete' },
+    antilinkWarnings: { type: Map, of: Number, default: {} },
+    antilinkMaxWarnings: { type: Number, default: 3 },
+    antilinkWhitelist: { type: [String], default: [] },
+    antidelete: { type: Boolean, default: false },
+    antideleteDestination: { type: String, default: 'group' },
+    autoForward: { type: Boolean, default: false },
+    autoForwardTargets: { type: [String], default: [] },
+    autoForwardTimestamp: { type: Boolean, default: false },
+    autoForwardCaption: { type: String, default: '' },
+    autoForwardReplacements: { type: [{ pattern: String, replacement: String }], default: [] },
+    welcome: { type: Boolean, default: false },
+    goodbye: { type: Boolean, default: false }
+});
+
+const kaif_globalAutoForwardSchema = new mongoose.Schema({
+    enabled: { type: Boolean, default: false },
+    sourceJids: { type: [String], default: [] },
+    targetJids: { type: [String], default: [] },
+    autoForwardTimestamp: { type: Boolean, default: false },
+    forwardPicture: { type: Boolean, default: true },
+    forwardVideo: { type: Boolean, default: true },
+    forwardAudio: { type: Boolean, default: true },
+    forwardDocument: { type: Boolean, default: true },
+    forwardText: { type: Boolean, default: true },
+    createdAt: { type: Date, default: Date.now }
+});
+
+// Message Store Schema with 6-Hour Strict TTL Expiration (21600 seconds)
+const kaif_messageStoreSchema = new mongoose.Schema({
+    msgId: { type: String, required: true, unique: true },
+    remoteJid: { type: String, required: true },
+    sender: { type: String, required: true },
+    body: { type: String, default: '' },
+    fullMsgData: { type: mongoose.Schema.Types.Mixed },
+    createdAt: { type: Date, default: Date.now, expires: 21600 }
+});
+
+let isConnected = false;
+
+// ⚡ IN-MEMORY CACHES FOR 0MS INSTANT SPEED
+const botConfigCache = new Map();
+const globalForwardCache = new Map();
+const groupSettingsCache = new Map();
+
+function getModel(sessionId, type) {
+    const prefix = sessionId || 'Akif_session';
+    const collectionName = `${prefix}.${type.toLowerCase()}`;
+    const modelName = `${prefix}_${type}`;
+
+    if (mongoose.models[modelName]) return mongoose.models[modelName];
+
+    switch (type) {
+        case 'Toggle': return mongoose.model(modelName, Akif_toggleSchema, collectionName);
+        case 'UserSettings': return mongoose.model(modelName, Akif_userSettingsSchema, collectionName);
+        case 'AutoReply': return mongoose.model(modelName, Akif_autoReplySchema, collectionName);
+        case 'SessionIndex': return mongoose.model(modelName, Akif_sessionIndexSchema, collectionName);
+        case 'Bgm': return mongoose.model(modelName, Akif_bgmSchema, collectionName);
+        case 'BgmConfig': return mongoose.model(modelName, Akif_bgmConfigSchema, collectionName);
+        case 'Mention': return mongoose.model(modelName, Akif_mentionSchema, collectionName);
+        case 'MentionConfig': return mongoose.model(modelName, Akif_mentionConfigSchema, collectionName);
+        case 'BotConfig': return mongoose.model(modelName, Akif_botConfigSchema, collectionName);
+        case 'GroupSettings': return mongoose.model(modelName, Akif_groupSettingsSchema, collectionName);
+        case 'GlobalAutoForward': return mongoose.model(modelName, Akif_globalAutoForwardSchema, collectionName);
+        case 'Rank': return mongoose.model(modelName, kaif_rankSchema, collectionName);
+        case 'MessageStore': return mongoose.model(modelName, Akif_messageStoreSchema, collectionName);
+        default: throw new Error(`Unknown model type: ${type}`);
+    }
+}
+
+async function Akif_connectDatabase(mongoDbUrl) {
+    if (!mongoDbUrl) return false;
+    try {
+        await mongoose.connect(mongoDbUrl);
+        isConnected = true;
+        console.log('✅ Akif Bot: Connected to MongoDB successfully!');
+        return true;
+    } catch (e) {
+        console.error('❌ MongoDB Connection Error:', e.message);
+        return false;
+    }
+}
+
+function Akif_isDbConnected() {
+    return isConnected;
+}
+
+async function Akif_getBotConfig(sessionId) {
+    if (!sessionId) sessionId = 'kaif_session';
+    if (botConfigCache.has(sessionId)) {
+        return botConfigCache.get(sessionId);
+    }
+    if (!isConnected) {
+        const defaultCfg = { antiDelete: true, autoStatusSeen: true, autoStatusReact: true, workMode: 'private' };
+        botConfigCache.set(sessionId, defaultCfg);
+        return defaultCfg;
+    }
+    try {
+        const Model = getModel(sessionId, 'BotConfig');
+        let config = await Model.findOne({});
+        if (!config) {
+            config = await Model.create({});
+        }
+        const plainObj = config.toObject();
+        botConfigCache.set(sessionId, plainObj);
+        return plainObj;
+    } catch (e) {
+        console.error('DB Error getBotConfig:', e);
+        return null;
+    }
+}
+
+async function Akif_updateBotConfig(sessionId, updates) {
+    if (!sessionId) sessionId = 'Akif_session';
+    const current = botConfigCache.get(sessionId) || {};
+    const merged = { ...current, ...updates };
+    botConfigCache.set(sessionId, merged);
+
+    if (isConnected) {
+        try {
+            const Model = getModel(sessionId, 'BotConfig');
+            const updated = await Model.findOneAndUpdate({}, merged, { upsert: true, new: true });
+            if (updated) botConfigCache.set(sessionId, updated.toObject());
+        } catch (e) {
+            console.error('DB Error updateBotConfig:', e);
+        }
+    }
+
+    if (typeof global.invalidateConfigCaches === 'function') {
+        global.invalidateConfigCaches(sessionId);
+    }
+    if (typeof global.broadcastLog === 'function') {
+        global.broadcastLog('config_updated', 'Configuration updated');
+    }
+    return true;
+}
+
+async function Akif_saveMessage(sessionId, msgData) {
+    if (!isConnected || !msgData?.msgId) return false;
+    try {
+        const Model = getModel(sessionId, 'MessageStore');
+        await Model.findOneAndUpdate(
+            { msgId: msgData.msgId },
+            msgData,
+            { upsert: true, new: true }
+        );
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+async function Akif_getMessage(sessionId, msgId) {
+    if (!isConnected || !msgId) return null;
+    try {
+        const Model = getModel(sessionId, 'MessageStore');
+        const msg = await Model.findOne({ msgId });
+        return msg;
+    } catch (e) {
+        return null;
+    }
+}
+
+async function Akif_purgeOldMessages(sessionId, hours = 6) {
+    if (!isConnected) return 0;
+    try {
+        const Model = getModel(sessionId, 'MessageStore');
+        const cutoff = new Date(Date.now() - (hours * 60 * 60 * 1000));
+        const result = await Model.deleteMany({ createdAt: { $lt: cutoff } });
+        return result.deletedCount || 0;
+    } catch (e) {
+        console.error('DB Purge Old Messages Error:', e.message);
+        return 0;
+    }
+}
+
+async function Akif_getGroupSettings(sessionId, jid) {
+    const cacheKey = `${sessionId}_${jid}`;
+    if (groupSettingsCache.has(cacheKey)) {
+        return groupSettingsCache.get(cacheKey);
+    }
+    if (!isConnected) return null;
+    try {
+        const Model = getModel(sessionId, 'GroupSettings');
+        let settings = await Model.findOne({ jid });
+        if (!settings) {
+            settings = await Model.create({ jid });
+        }
+        const plainObj = settings.toObject();
+        groupSettingsCache.set(cacheKey, plainObj);
+        return plainObj;
+    } catch (e) {
+        console.error('DB Error getGroupSettings:', e);
+        return null;
+    }
+}
+
+async function Akif_updateGroupSettings(sessionId, jid, updates) {
+    const cacheKey = `${sessionId}_${jid}`;
+    if (groupSettingsCache.has(cacheKey)) {
+        const current = groupSettingsCache.get(cacheKey) || {};
+        groupSettingsCache.set(cacheKey, { ...current, ...updates });
+    }
+    if (!isConnected) return false;
+    try {
+        const Model = getModel(sessionId, 'GroupSettings');
+        const updated = await Model.findOneAndUpdate({ jid }, updates, { upsert: true, new: true });
+        if (updated) groupSettingsCache.set(cacheKey, updated.toObject());
+        return true;
+    } catch (e) {
+        console.error('DB Error updateGroupSettings:', e);
+        return false;
+    }
+}
+
+async function Akif_getGlobalAutoForward(sessionId) {
+    if (!sessionId) sessionId = 'kaif_session';
+    if (globalForwardCache.has(sessionId)) {
+        return globalForwardCache.get(sessionId);
+    }
+    if (!isConnected) {
+        const defaultCfg = {
+            enabled: false,
+            sourceJids: [],
+            targetJids: [],
+            oldTextRegex: process.env.OLD_TEXT_REGEX ? process.env.OLD_TEXT_REGEX.split(',').map(s => s.trim()).filter(Boolean) : [],
+            newText: process.env.NEW_TEXT || ""
+        };
+        globalForwardCache.set(sessionId, defaultCfg);
+        return defaultCfg;
+    }
+    try {
+        const Model = getModel(sessionId, 'GlobalAutoForward');
+        let config = await Model.findOne({});
+        if (!config) {
+            config = await Model.create({
+                enabled: false,
+                sourceJids: [],
+                targetJids: [],
+                oldTextRegex: process.env.OLD_TEXT_REGEX ? process.env.OLD_TEXT_REGEX.split(',').map(s => s.trim()).filter(Boolean) : [],
+                newText: process.env.NEW_TEXT || ""
+            });
+        }
+        const plainObj = config.toObject();
+        globalForwardCache.set(sessionId, plainObj);
+
+        if (!process.env.OLD_TEXT_REGEX && plainObj.oldTextRegex && plainObj.oldTextRegex.length) {
+            process.env.OLD_TEXT_REGEX = plainObj.oldTextRegex.join(',');
+        }
+        if (!process.env.NEW_TEXT && plainObj.newText) {
+            process.env.NEW_TEXT = plainObj.newText;
+        }
+
+        return plainObj;
+    } catch (e) {
+        console.error('DB Error getGlobalAutoForward:', e);
+        return null;
+    }
+}
+
+async function kaif_updateGlobalAutoForward(sessionId, updates) {
+    if (!sessionId) sessionId = 'Akif_session';
+    const current = globalForwardCache.get(sessionId) || {};
+    const merged = { ...current, ...updates };
+    globalForwardCache.set(sessionId, merged);
+
+    if (updates.oldTextRegex !== undefined) {
+        process.env.OLD_TEXT_REGEX = Array.isArray(updates.oldTextRegex)
+            ? updates.oldTextRegex.join(',')
+            : String(updates.oldTextRegex || '');
+    }
+    if (updates.newText !== undefined) {
+        process.env.NEW_TEXT = String(updates.newText || '');
+    }
+
+    if (isConnected) {
+        try {
+            const Model = getModel(sessionId, 'GlobalAutoForward');
+            const updated = await Model.findOneAndUpdate({}, merged, { upsert: true, new: true });
+            if (updated) globalForwardCache.set(sessionId, updated.toObject());
+        } catch (e) {
+            console.error('DB Error updateGlobalAutoForward:', e);
+        }
+    }
+
+    if (typeof global.invalidateConfigCaches === 'function') {
+        global.invalidateConfigCaches(sessionId);
+    }
+    if (typeof global.broadcastLog === 'function') {
+        global.broadcastLog('config_updated', 'Configuration updated');
+    }
+    return true;
+}
+
+module.exports = {
+    Akif_connectDatabase,
+    Akif_isDbConnected,
+    Akif_getBotConfig,
+    Akif_updateBotConfig,
+    Akif_saveMessage,
+    Akif_getMessage,
+    Akif_purgeOldMessages,
+    Akif_getGroupSettings,
+    Akif_updateGroupSettings,
+    Akif_getGlobalAutoForward,
+    Akif_updateGlobalAutoForward
+};
