@@ -6,14 +6,14 @@ const {
     useMultiFileAuthState
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const config = require('../Kaif');
+const config = require('../Akif');
 const { useMongoDBAuthState } = require('./mongoAuth');
 const mongoose = require('mongoose');
 const path = require('path');
 const fs = require('fs');
 
 async function Kaif_connectSession(usePairingCode = false, customSessionId = null) {
-    const sessionId = customSessionId || config.sessionId || 'Kaif_session';
+    const sessionId = customSessionId || config.sessionId || 'Akif_session';
     console.log(`🔌 Connecting to session: ${sessionId}`);
 
     let state, saveCreds;
@@ -73,12 +73,12 @@ async function Kaif_connectSession(usePairingCode = false, customSessionId = nul
         connectTimeoutMs: 60000,
     };
 
-    const kaif_sock = makeWASocket(socketOptions);
+    const Akif_sock = makeWASocket(socketOptions);
 
-    return { kaif_sock, saveCreds };
+    return { Akif_sock, saveCreds };
 }
 
-function kaif_normalizePhone(num) {
+function Akif_normalizePhone(num) {
     if (!num) return '';
     let cleaned = String(num).replace(/\D/g, '');
     if (!cleaned) return '';
@@ -92,16 +92,16 @@ function kaif_normalizePhone(num) {
     return cleaned;
 }
 
-async function kaif_requestPairingCode(kaif_sock, phoneNumber) {
-    if (!kaif_sock) throw new Error('No active session socket to request a pairing code from.');
-    if (kaif_sock.authState?.creds?.registered) {
+async function Akif_requestPairingCode(Akif_sock, phoneNumber) {
+    if (!Akif_sock) throw new Error('No active session socket to request a pairing code from.');
+    if (Akif_sock.authState?.creds?.registered) {
         throw new Error('Session is already registered/connected. Pairing code is not needed.');
     }
-    const cleanNumber = kaif_normalizePhone(phoneNumber);
+    const cleanNumber = Akif_normalizePhone(phoneNumber);
     if (!cleanNumber || cleanNumber.length < 6) {
         throw new Error('Please provide a valid phone number with country code (e.g. 923189664554 or 03189664554).');
     }
-    const code = await Kaif_sock.requestPairingCode(cleanNumber);
+    const code = await Akof_sock.requestPairingCode(cleanNumber);
     return code;
 }
 
@@ -132,4 +132,4 @@ async function Akif_clearSession(customSessionId = null) {
     }
 }
 
-module.exports = { Akif_connectSession, kaif_clearSession, Akif_requestPairingCode };
+module.exports = { Akif_connectSession, Akif_clearSession, Akif_requestPairingCode };
