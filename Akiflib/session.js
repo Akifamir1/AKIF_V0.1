@@ -6,14 +6,14 @@ const {
     useMultiFileAuthState
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const config = require('../Akif');
+const config = require('../Kaif');
 const { useMongoDBAuthState } = require('./mongoAuth');
 const mongoose = require('mongoose');
 const path = require('path');
 const fs = require('fs');
 
-async function Akif_connectSession(usePairingCode = false, customSessionId = null) {
-    const sessionId = customSessionId || config.sessionId || 'Akif_session';
+async function Kaif_connectSession(usePairingCode = false, customSessionId = null) {
+    const sessionId = customSessionId || config.sessionId || 'Kaif_session';
     console.log(`🔌 Connecting to session: ${sessionId}`);
 
     let state, saveCreds;
@@ -101,7 +101,7 @@ async function kaif_requestPairingCode(kaif_sock, phoneNumber) {
     if (!cleanNumber || cleanNumber.length < 6) {
         throw new Error('Please provide a valid phone number with country code (e.g. 923189664554 or 03189664554).');
     }
-    const code = await Akif_sock.requestPairingCode(cleanNumber);
+    const code = await Kaif_sock.requestPairingCode(cleanNumber);
     return code;
 }
 
